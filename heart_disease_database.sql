@@ -206,7 +206,7 @@ SET
 
 
 
--- 2. Check for invalid rest ECG results
+-- 2. Check if data is in table
 -- SELECT * FROM patients
 
 
