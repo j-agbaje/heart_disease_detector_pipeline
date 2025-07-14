@@ -5,8 +5,7 @@
 - Python 3.6 or higher
 - MySQL Server installed & running (locally or remote)
 - MongoDB Atlas account (for cloud MongoDB) or local MongoDB server
-- Git
-- (Optional) Virtual environment tool (`venv` recommended)
+- Virtual environment tool (`venv` recommended)
 
 ---
 
