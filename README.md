@@ -31,8 +31,8 @@ pip install -r requirements.txt
 - Create a MySQL database named heart_disease_predictor
 - Run the SQL scripts to create schema and stored procedures:
 ```
-mysql -u <username> -p heart_disease_predictor < database/sql/schema.sql
-mysql -u <username> -p heart_disease_predictor < database/sql/procedures.sql
+mysql -u -p heart_disease_predictor < database/sql/schema.sql
+mysql -u -p heart_disease_predictor < database/sql/procedures.sql
 ```
 ### 5. Set up MongoDB
 - Create a free cluster on MongoDB Atlas
