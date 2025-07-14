@@ -15,7 +15,7 @@
 
 ```bash
 git clone https://github.com/j-agbaje/heart_disease_detector_pipeline.git
-cd heart-disease-predictor
+cd heart_disease_detector_pipeline
 ```
 ### 2. Create and activate a virtual environment
 ```bash
