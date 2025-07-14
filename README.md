@@ -1,4 +1,4 @@
-# Heart Disease Predictor API - Setup & Usage
+# Heart Disease Predictor_pipeline
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@
 ### 1. Clone the repository
 
 ```bash
-git clone [repo](https://github.com/j-agbaje/heart_disease_detector_pipeline.git)
+git clone https://github.com/j-agbaje/heart_disease_detector_pipeline.git
 cd heart-disease-predictor
 ```
 ### 2. Create and activate a virtual environment
