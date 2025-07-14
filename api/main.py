@@ -1,13 +1,49 @@
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import List
+from typing import List, Optional
 from datetime import datetime
+import numpy as np
+from pydantic import BaseModel
 
-from api.models import Patient, PatientCreate, PatientUpdate
+# Import your existing models and database functions
+from api.models import PatientCreate, PatientUpdate
 from api.database import get_mysql_db, get_mongo_db, test_connections
 
+import os
+import pickle
+
+# Load ML model
+model_path = os.path.join("models", "heart_disease_model.h5.pkl")
+with open(model_path, "rb") as f:
+    model = pickle.load(f)
+
 app = FastAPI(title="Heart Disease Predictor API", version="1.0.0")
+
+# Updated Patient response model
+class Patient(BaseModel):
+    id: int
+    age: int
+    sex: str
+    dataset: str
+    cp: str
+    trestbps: int
+    chol: int
+    fbs: str
+    restecg: str
+    thalch: int
+    exang: str
+    oldpeak: float
+    slope: str
+    ca: int
+    thal: str
+    num: int
+    created_at: datetime
+    prediction: Optional[int] = None
+    health_status: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 @app.on_event("startup")
 async def startup_event():
@@ -64,33 +100,7 @@ async def create_patient(patient: PatientCreate, db: Session = Depends(get_mysql
         if patient_id is None:
             raise HTTPException(status_code=400, detail="Could not retrieve inserted patient ID")
 
-        created_patient = db.execute(
-            text("SELECT * FROM patients WHERE patient_id = :patient_id"),
-            {"patient_id": patient_id}
-        ).fetchone()
-
-        if not created_patient:
-            raise HTTPException(status_code=404, detail="Inserted patient not found")
-
-        return Patient(
-            id=created_patient.patient_id,
-            age=created_patient.patient_age,
-            sex=created_patient.gender,
-            dataset=created_patient.data_source,
-            cp=created_patient.chest_pain_type,
-            trestbps=created_patient.resting_blood_pressure,
-            chol=created_patient.cholesterol_level,
-            fbs=created_patient.fasting_blood_sugar,
-            restecg=created_patient.resting_ecg_results,
-            thalch=created_patient.max_heart_rate,
-            exang=created_patient.exercise_induced_angina,
-            oldpeak=created_patient.st_depression,
-            slope=created_patient.exercise_peak_slope,
-            ca=created_patient.major_vessels_count,
-            thal=created_patient.thalassemia_type,
-            num=created_patient.heart_disease_diagnosis,
-            created_at=created_patient.record_created_at
-        )
+        return await get_patient(patient_id, db)
 
     except Exception as e:
         db.rollback()
@@ -105,25 +115,7 @@ async def get_patients(skip: int = 0, limit: int = 100, db: Session = Depends(ge
         )
         patients = result.fetchall()
         
-        return [Patient(
-            id=p.patient_id,
-            age=p.patient_age,
-            sex=p.gender,
-            dataset=p.data_source,
-            cp=p.chest_pain_type,
-            trestbps=p.resting_blood_pressure,
-            chol=p.cholesterol_level,
-            fbs=p.fasting_blood_sugar,
-            restecg=p.resting_ecg_results,
-            thalch=p.max_heart_rate,
-            exang=p.exercise_induced_angina,
-            oldpeak=p.st_depression,
-            slope=p.exercise_peak_slope,
-            ca=p.major_vessels_count,
-            thal=p.thalassemia_type,
-            num=p.heart_disease_diagnosis,
-            created_at=p.record_created_at
-        ) for p in patients]
+        return [await format_patient_response(p, db) for p in patients]
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching patients: {str(e)}")
@@ -140,30 +132,58 @@ async def get_patient(patient_id: int, db: Session = Depends(get_mysql_db)):
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
             
-        return Patient(
-            id=patient.patient_id,
-            age=patient.patient_age,
-            sex=patient.gender,
-            dataset=patient.data_source,
-            cp=patient.chest_pain_type,
-            trestbps=patient.resting_blood_pressure,
-            chol=patient.cholesterol_level,
-            fbs=patient.fasting_blood_sugar,
-            restecg=patient.resting_ecg_results,
-            thalch=patient.max_heart_rate,
-            exang=patient.exercise_induced_angina,
-            oldpeak=patient.st_depression,
-            slope=patient.exercise_peak_slope,
-            ca=patient.major_vessels_count,
-            thal=patient.thalassemia_type,
-            num=patient.heart_disease_diagnosis,
-            created_at=patient.record_created_at
-        )
+        return await format_patient_response(patient, db)
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching patient: {str(e)}")
+
+async def format_patient_response(patient, db):
+    """Helper function to format patient response with prediction"""
+    # Prepare features for prediction
+    features = [
+        patient.patient_age,
+        1 if patient.gender.lower() == "male" else 0,
+        ["typical angina", "atypical angina", "non-anginal", "asymptomatic"].index(patient.chest_pain_type),
+        patient.resting_blood_pressure,
+        patient.cholesterol_level,
+        1 if str(patient.fasting_blood_sugar).upper() == "TRUE" else 0,
+        ["normal", "st-t abnormality", "lv hypertrophy"].index(patient.resting_ecg_results),
+        patient.max_heart_rate,
+        1 if str(patient.exercise_induced_angina).upper() == "TRUE" else 0,
+        patient.st_depression,
+        ["upsloping", "flat", "downsloping"].index(patient.exercise_peak_slope),
+        patient.major_vessels_count,
+        ["normal", "fixed defect", "reversable defect"].index(patient.thalassemia_type),
+    ]
+
+    # Get prediction
+    input_data = np.array([features])
+    prediction = int(model.predict(input_data)[0])
+    health_status = "Healthy ✅" if prediction == 0 else "At Risk (Heart Disease) ⚠️"
+
+    return Patient(
+        id=patient.patient_id,
+        age=patient.patient_age,
+        sex=patient.gender,
+        dataset=patient.data_source,
+        cp=patient.chest_pain_type,
+        trestbps=patient.resting_blood_pressure,
+        chol=patient.cholesterol_level,
+        fbs=patient.fasting_blood_sugar,
+        restecg=patient.resting_ecg_results,
+        thalch=patient.max_heart_rate,
+        exang=patient.exercise_induced_angina,
+        oldpeak=patient.st_depression,
+        slope=patient.exercise_peak_slope,
+        ca=patient.major_vessels_count,
+        thal=patient.thalassemia_type,
+        num=patient.heart_disease_diagnosis,
+        created_at=patient.record_created_at,
+        prediction=prediction,
+        health_status=health_status
+    )
 
 @app.put("/patients/{patient_id}", response_model=Patient)
 async def update_patient(
@@ -264,37 +284,12 @@ async def get_latest_patient_data(db: Session = Depends(get_mysql_db)):
         if not patient:
             raise HTTPException(status_code=404, detail="No patients found")
             
-        return {
-            "id": patient.patient_id,
-            "age": patient.patient_age,
-            "sex": patient.gender,
-            "cp": patient.chest_pain_type,
-            "trestbps": patient.resting_blood_pressure,
-            "chol": patient.cholesterol_level,
-            "fbs": patient.fasting_blood_sugar,
-            "restecg": patient.resting_ecg_results,
-            "thalch": patient.max_heart_rate,
-            "exang": patient.exercise_induced_angina,
-            "oldpeak": patient.st_depression,
-            "slope": patient.exercise_peak_slope,
-            "ca": patient.major_vessels_count,
-            "thal": patient.thalassemia_type
-        }
+        return await format_patient_response(patient, db)
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching latest patient: {str(e)}")
-
-# --------------------------
-# Placeholder for MongoDB CRUD
-# --------------------------
-# You can add MongoDB endpoints here later, e.g.:
-#
-# @app.get("/mongo/patients/")
-# async def get_mongo_patients(mongo_db = Depends(get_mongo_db)):
-#     patients = list(mongo_db.patients.find())
-#     return patients
 
 if __name__ == "__main__":
     import uvicorn
