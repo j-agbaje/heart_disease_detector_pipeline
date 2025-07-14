@@ -1,4 +1,4 @@
-# Heart Disease Predictor 
+# Heart Disease Predictor_pipeline
 
 ## Prerequisites
 
