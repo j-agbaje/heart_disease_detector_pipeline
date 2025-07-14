@@ -5,8 +5,7 @@ from typing import List
 from datetime import datetime
 
 from api.models import Patient, PatientCreate, PatientUpdate
-
-from api.database import get_mysql_db, test_connections
+from api.database import get_mysql_db, get_mongo_db, test_connections
 
 app = FastAPI(title="Heart Disease Predictor API", version="1.0.0")
 
@@ -25,7 +24,9 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now()}
 
-# CRUD Operations for Patients
+# -------------------
+# MySQL CRUD Endpoints
+# -------------------
 
 @app.post("/patients/", response_model=Patient)
 async def create_patient(patient: PatientCreate, db: Session = Depends(get_mysql_db)):
@@ -57,7 +58,6 @@ async def create_patient(patient: PatientCreate, db: Session = Depends(get_mysql
         })
         db.commit()
 
-        # Get last inserted ID
         last_id_result = db.execute(text("SELECT LAST_INSERT_ID()"))
         patient_id = last_id_result.scalar()
 
@@ -98,7 +98,6 @@ async def create_patient(patient: PatientCreate, db: Session = Depends(get_mysql
 
 @app.get("/patients/", response_model=List[Patient])
 async def get_patients(skip: int = 0, limit: int = 100, db: Session = Depends(get_mysql_db)):
-    """Get all patients with pagination"""
     try:
         result = db.execute(
             text("SELECT * FROM patients LIMIT :limit OFFSET :skip"),
@@ -131,7 +130,6 @@ async def get_patients(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 
 @app.get("/patients/{patient_id}", response_model=Patient)
 async def get_patient(patient_id: int, db: Session = Depends(get_mysql_db)):
-    """Get a specific patient by ID"""
     try:
         result = db.execute(
             text("SELECT * FROM patients WHERE patient_id = :patient_id"),
@@ -173,9 +171,6 @@ async def update_patient(
     patient_update: PatientUpdate,
     db: Session = Depends(get_mysql_db),
 ):
-    """Update a patient record"""
-
-    # 1️⃣  Make sure the patient exists
     existing = db.execute(
         text("SELECT * FROM patients WHERE patient_id = :patient_id"),
         {"patient_id": patient_id},
@@ -184,7 +179,6 @@ async def update_patient(
     if not existing:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    # 2️⃣  Map API‑field ➜ real DB column
     field_mapping = {
         "age": "patient_age",
         "sex": "gender",
@@ -206,7 +200,6 @@ async def update_patient(
     update_fields = []
     update_values = {"patient_id": patient_id}
 
-    # 3️⃣  Build the SET‑clause only for provided fields
     for api_field, value in patient_update.dict(exclude_unset=True).items():
         if api_field in field_mapping:
             db_col = field_mapping[api_field]
@@ -214,10 +207,8 @@ async def update_patient(
             update_values[api_field] = value
 
     if not update_fields:
-        # nothing to update
         return await get_patient(patient_id, db)
 
-    # 4️⃣  Execute UPDATE
     query = text(
         f"UPDATE patients SET {', '.join(update_fields)} "
         "WHERE patient_id = :patient_id"
@@ -229,12 +220,10 @@ async def update_patient(
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error updating patient: {e}")
 
-    # 5️⃣  Return the fresh record
     return await get_patient(patient_id, db)
 
 @app.delete("/patients/{patient_id}")
 async def delete_patient(patient_id: int, db: Session = Depends(get_mysql_db)):
-    """Delete a patient record"""
     try:
         existing = db.execute(
             text("SELECT * FROM patients WHERE patient_id = :patient_id"),
@@ -244,13 +233,12 @@ async def delete_patient(patient_id: int, db: Session = Depends(get_mysql_db)):
         if not existing:
             raise HTTPException(status_code=404, detail="Patient not found")
 
-        # First delete any dependent records
+        # Delete dependent logs first (MySQL foreign keys)
         db.execute(
             text("DELETE FROM patient_logs WHERE patient_id = :patient_id"),
             {"patient_id": patient_id}
         )
 
-        # Then delete the patient
         db.execute(
             text("DELETE FROM patients WHERE patient_id = :patient_id"),
             {"patient_id": patient_id}
@@ -267,7 +255,6 @@ async def delete_patient(patient_id: int, db: Session = Depends(get_mysql_db)):
 
 @app.get("/patients/latest/data")
 async def get_latest_patient_data(db: Session = Depends(get_mysql_db)):
-    """Get the latest patient data for prediction"""
     try:
         result = db.execute(
             text("SELECT * FROM patients ORDER BY record_created_at DESC LIMIT 1")
@@ -299,7 +286,16 @@ async def get_latest_patient_data(db: Session = Depends(get_mysql_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error fetching latest patient: {str(e)}")
 
+# --------------------------
+# Placeholder for MongoDB CRUD
+# --------------------------
+# You can add MongoDB endpoints here later, e.g.:
+#
+# @app.get("/mongo/patients/")
+# async def get_mongo_patients(mongo_db = Depends(get_mongo_db)):
+#     patients = list(mongo_db.patients.find())
+#     return patients
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    
