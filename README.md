@@ -1,4 +1,4 @@
-# Heart Disease Predictor API - Setup & Usage
+# Heart Disease Predictor 
 
 ## Prerequisites
 
